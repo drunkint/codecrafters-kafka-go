@@ -10,14 +10,26 @@ import (
 
 const bufferSize = 1024
 
+type reqHeader struct {
+	reqAPIKey int16
+	reqAPIVer int16 
+	correlationID int32
+	clientID string 
 
-type msg struct {
+}
+
+type msgReceive struct {
+	msgSize int32
+	header reqHeader
+}
+
+type msgResponse struct {
 	msgSize int32
 	correlationID int32
 	// body string
 }
 
-func (m *msg) format() ([]byte, error) {
+func (m *msgResponse) format() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	if err := binary.Write(buf, binary.BigEndian, m.msgSize); err != nil {
@@ -30,6 +42,38 @@ func (m *msg) format() ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func parseBuffer(data []byte) (*msgReceive, error) {
+	var msgReceive msgReceive
+
+	buf := bytes.NewReader(data)
+
+	if err := binary.Read(buf, binary.BigEndian, &msgReceive.msgSize); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(buf, binary.BigEndian, &msgReceive.header.reqAPIKey); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(buf, binary.BigEndian, &msgReceive.header.reqAPIVer); err != nil {
+		return nil, err
+	}
+
+	if err := binary.Read(buf, binary.BigEndian, &msgReceive.header.correlationID); err != nil {
+		return nil, err
+	}
+
+	return &msgReceive , nil
+}
+
+func createResponse(src msgReceive) *msgResponse {
+	var dest msgResponse
+	dest.correlationID = src.header.correlationID
+	dest.msgSize = src.msgSize
+
+	return &dest
 }
 
 func handleClientConnection(conn net.Conn) {
@@ -45,26 +89,27 @@ func handleClientConnection(conn net.Conn) {
 
 	fmt.Println("Received: ", buffer[:n])
 
-	m := msg{
-		msgSize: 0,
-		correlationID: 7,
+	m, err := parseBuffer(buffer)
+	if err != nil {
+		fmt.Println("Failed to parse client. Error message: ", err.Error())
 	}
-	
-	mBytes, err := m.format()
+
+	response := createResponse(*m)
+	responseBytes, err := response.format()
 	if err != nil {
 		fmt.Println("Failed to format message. Error message: ", err.Error())
 	}
 
 	// Print each byte in hexadecimal format
 	fmt.Println("sending: ")
-	for i, b := range mBytes {
+	for i, b := range responseBytes {
 		fmt.Printf("%02X ", b)
 		if (i+1)%4 == 0 {
 				fmt.Println() // New line after every 4 bytes for readability
 		}
 }
 
-	conn.Write(mBytes)
+	conn.Write(responseBytes)
 }
 
 
