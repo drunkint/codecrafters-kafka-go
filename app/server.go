@@ -10,6 +10,10 @@ import (
 
 const bufferSize = 1024
 
+var errorCode = map[string] int16 {
+	"unsupportedVersion": 35,
+}
+
 type reqHeader struct {
 	reqAPIKey int16
 	reqAPIVer int16 
@@ -26,6 +30,7 @@ type msgReceive struct {
 type msgResponse struct {
 	msgSize int32
 	correlationID int32
+	errorCode int16
 	// body string
 }
 
@@ -39,6 +44,11 @@ func (m *msgResponse) format() ([]byte, error) {
 	// Write CorrelationID in 4 bytes
 	if err := binary.Write(buf, binary.BigEndian, m.correlationID); err != nil {
 			return nil, err
+	}
+
+	// Write Error Code in 2 Bytes
+	if err := binary.Write(buf, binary.BigEndian, m.errorCode); err != nil {
+		return nil, err
 	}
 
 	return buf.Bytes(), nil
@@ -72,6 +82,10 @@ func createResponse(src msgReceive) *msgResponse {
 	var dest msgResponse
 	dest.correlationID = src.header.correlationID
 	dest.msgSize = src.msgSize
+
+	if src.header.reqAPIVer < 0 || src.header.reqAPIVer > 4 {
+		dest.errorCode = errorCode["unsupportedVersion"]
+	}
 
 	return &dest
 }
